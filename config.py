@@ -1,0 +1,34 @@
+from dataclasses import dataclass, field
+from os import getenv
+
+
+@dataclass
+class Config:
+    bot_token: str = field(default_factory=lambda: getenv("BOT_TOKEN", ""))
+    owner_id: int = field(default_factory=lambda: int(getenv("OWNER_ID", "0")))
+    log_group_id: int = field(default_factory=lambda: int(getenv("LOG_GROUP_ID", "0")))
+    db_path: str = "data/bot.db"
+
+    # дефолтный шаблон гарант-поста
+    default_template: str = (
+        '🤝 <b>Безопасная сделка Telegram Stars</b>\n'
+        'Заказ: <a href="https://t.me/nft/{gift_slug}-{gift_number}"><b>#TG-{order_id}</b></a>\n\n'
+        'Покупатель зарезервировал <b>{stars} звёзд</b> '
+        'через гарантийную систему Telegram.\n'
+        'Средства находятся на специальном счёте удержания '
+        'и будут зачислены на ваш баланс Telegram звёзд '
+        'сразу после передачи подарка.\n\n'
+        '<b>Инструкция для завершения сделки:</b>\n'
+        '1. Передайте подарок @{operator_username}\n'
+        '2. Нажмите «Передать подарок» и выберите '
+        '<a href="https://t.me/nft/{gift_slug}-{gift_number}">'
+        '{gift_name} #{gift_number}</a>\n'
+        '3. Подтвердите передачу подарка\n\n'
+        '⚡ Система Telegram зафиксирует транзакцию '
+        'и моментально зачислит <b>{stars} звёзд</b> '
+        'на ваш баланс Telegram звёзд\n\n'
+        '⏳ Резерв действует <b>{timer}</b>'
+    )
+
+
+config = Config()
