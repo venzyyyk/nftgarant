@@ -48,7 +48,7 @@ class NewDeal(StatesGroup):
 
 @router.message(F.text == "/start")
 async def cmd_start(msg: Message):
-    if msg.from_user.id == config.owner_id:
+    if config.is_owner(msg.from_user.id):
         await msg.answer(
             "👋 Бот гарант-сделок запущен.\n\n"
             "Команды владельца:\n"
@@ -74,7 +74,7 @@ async def cmd_start(msg: Message):
 
 @router.message(F.text == "/resettpl")
 async def cmd_resettpl(msg: Message):
-    if msg.from_user.id != config.owner_id:
+    if not config.is_owner(msg.from_user.id):
         return
     await delete_template()
     await msg.answer(
@@ -87,7 +87,7 @@ async def cmd_resettpl(msg: Message):
 
 @router.message(F.text == "/deal")
 async def cmd_deal(msg: Message, state: FSMContext):
-    if not await is_operator(msg.from_user.id) and msg.from_user.id != config.owner_id:
+    if not await is_operator(msg.from_user.id) and not config.is_owner(msg.from_user.id):
         return
     await msg.answer(
         "Вставь ссылку на подарок:\n"
@@ -192,7 +192,7 @@ async def deal_timer(msg: Message, state: FSMContext):
 
 @router.message(F.text.startswith("/send"))
 async def cmd_send(msg: Message):
-    if not await is_operator(msg.from_user.id) and msg.from_user.id != config.owner_id:
+    if not await is_operator(msg.from_user.id) and not config.is_owner(msg.from_user.id):
         return
 
     parts = msg.text.split()
@@ -266,7 +266,7 @@ async def op_confirm(cb: CallbackQuery):
         await cb.answer("Сделка не найдена.", show_alert=True)
         return
 
-    if cb.from_user.id != deal["operator_id"] and cb.from_user.id != config.owner_id:
+    if cb.from_user.id != deal["operator_id"] and not config.is_owner(cb.from_user.id):
         await cb.answer("Не твоя сделка.", show_alert=True)
         return
 
@@ -295,7 +295,7 @@ async def op_cancel(cb: CallbackQuery):
         await cb.answer("Сделка не найдена.", show_alert=True)
         return
 
-    if cb.from_user.id != deal["operator_id"] and cb.from_user.id != config.owner_id:
+    if cb.from_user.id != deal["operator_id"] and not config.is_owner(cb.from_user.id):
         await cb.answer("Не твоя сделка.", show_alert=True)
         return
 
@@ -374,7 +374,7 @@ async def deal_accept(cb: CallbackQuery):
 
 @router.message(F.text == "/mydeals")
 async def cmd_mydeals(msg: Message):
-    if not await is_operator(msg.from_user.id) and msg.from_user.id != config.owner_id:
+    if not await is_operator(msg.from_user.id) and not config.is_owner(msg.from_user.id):
         return
 
     deals = await get_active_deals(msg.from_user.id)
@@ -427,7 +427,7 @@ async def inline_deal_query(query: InlineQuery):
     log.info(f"INLINE QUERY from {query.from_user.id} (@{query.from_user.username}): '{query.query}'")
 
     # только оператор/владелец
-    if not await is_operator(query.from_user.id) and query.from_user.id != config.owner_id:
+    if not await is_operator(query.from_user.id) and not config.is_owner(query.from_user.id):
         log.info(f"inline: user {query.from_user.id} is not operator")
         await query.answer([], cache_time=1, is_personal=True)
         return
@@ -442,7 +442,7 @@ async def inline_deal_query(query: InlineQuery):
             results.append(await _build_deal_result(d, query.from_user.username))
     else:
         deal = await get_deal_by_order(text)
-        if deal and (deal["operator_id"] == query.from_user.id or query.from_user.id == config.owner_id):
+        if deal and (deal["operator_id"] == query.from_user.id or config.is_owner(query.from_user.id)):
             results.append(await _build_deal_result(deal, query.from_user.username))
         log.info(f"inline: query '{text}' matched {len(results)} deals")
 

@@ -49,7 +49,7 @@ def parse_gift_link(text: str) -> tuple[str, str, str] | None:
 
 def is_operator_msg(msg: Message) -> bool:
     """Это сообщение оператора (владельца), а не клиента."""
-    return msg.from_user and msg.from_user.id == config.owner_id
+    return msg.from_user and config.is_owner(msg.from_user.id)
 
 
 # --- business_connection ---
@@ -65,7 +65,7 @@ async def on_business_connection(event: BusinessConnection):
     else:
         BIZ_CONNECTIONS.pop(event.id, None)
 
-    if event.is_enabled and event.user.id == config.owner_id:
+    if event.is_enabled and config.is_owner(event.user.id):
         try:
             await event.bot.send_message(
                 event.user.id,
@@ -100,9 +100,9 @@ async def on_business_message(msg: Message):
     # игнорируем сообщения из ЧУЖИХ бизнес-аккаунтов,
     # куда подключен тот же бот (защита от дублей)
     bcid_owner = BIZ_CONNECTIONS.get(msg.business_connection_id)
-    if bcid_owner is not None and bcid_owner != config.owner_id:
+    if bcid_owner is not None and not config.is_owner(bcid_owner):
         log.info(
-            f"BIZ MSG: skip, bcid belongs to {bcid_owner}, not owner {config.owner_id}"
+            f"BIZ MSG: skip, bcid belongs to {bcid_owner}, not in owners {config.owner_ids}"
         )
         return
 

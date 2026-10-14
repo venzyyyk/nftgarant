@@ -15,7 +15,7 @@ router = Router()
 
 
 def is_owner(user_id: int) -> bool:
-    return user_id == config.owner_id
+    return config.is_owner(user_id)
 
 
 class EditTemplate(StatesGroup):
