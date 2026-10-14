@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 
 router = Router()
 
+# mapping business_connection_id -> owner_user_id
+# нужно чтобы отличать свой bcid от bcid других бизнес-аккаунтов,
+# куда подключен тот же бот
+BIZ_CONNECTIONS: dict[str, int] = {}
+
 GIFT_LINK_RE = re.compile(r"https?://t\.me/nft/([A-Za-z0-9_]+)-(\d+)")
 
 
@@ -56,6 +61,11 @@ async def on_business_connection(event: BusinessConnection):
         f"id={event.id}, enabled={event.is_enabled}, can_reply={event.can_reply}"
     )
     if event.is_enabled:
+        BIZ_CONNECTIONS[event.id] = event.user.id
+    else:
+        BIZ_CONNECTIONS.pop(event.id, None)
+
+    if event.is_enabled and event.user.id == config.owner_id:
         try:
             await event.bot.send_message(
                 event.user.id,
@@ -85,6 +95,15 @@ async def on_business_message(msg: Message):
 
     # игнорируем сообщения клиентов — команды только от оператора
     if not is_operator_msg(msg):
+        return
+
+    # игнорируем сообщения из ЧУЖИХ бизнес-аккаунтов,
+    # куда подключен тот же бот (защита от дублей)
+    bcid_owner = BIZ_CONNECTIONS.get(msg.business_connection_id)
+    if bcid_owner is not None and bcid_owner != config.owner_id:
+        log.info(
+            f"BIZ MSG: skip, bcid belongs to {bcid_owner}, not owner {config.owner_id}"
+        )
         return
 
     if not text:
