@@ -185,6 +185,15 @@ async def handle_offer(msg: Message, text: str, bcid: str):
         timer=timer,
     )
 
+    # удаляем команду оператора "offer ..." чтобы не светилась в чате
+    try:
+        await msg.bot.delete_business_messages(
+            business_connection_id=bcid,
+            message_ids=[msg.message_id],
+        )
+    except Exception as e:
+        log.warning(f"BIZ offer: delete operator msg failed: {e}")
+
     try:
         await msg.bot.send_message(
             chat_id=msg.chat.id,
