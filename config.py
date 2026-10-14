@@ -20,7 +20,7 @@ class Config:
 
     # полный шаблон (после Принять — показывается инструкция)
     default_template: str = (
-        '<tg-emoji emoji-id="5318901904686754959">🙂</tg-emoji> <b>Безопасная сделка Telegram Stars</b>\n'
+        '<b>Безопасная сделка Telegram Stars</b>\n'
         'Заказ: <a href="https://t.me/nft/{gift_slug}-{gift_number}"><b>#TG-{order_id}</b></a>\n\n'
         'Покупатель зарезервировал <b>{stars}<tg-emoji emoji-id="5406812184359507637">⭐</tg-emoji></b> '
         'через гарантийную систему Telegram.\n'
