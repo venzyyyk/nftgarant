@@ -163,3 +163,9 @@ async def set_template(template: str):
             (template,),
         )
         await db.commit()
+
+
+async def delete_template():
+    async with aiosqlite.connect(DB) as db:
+        await db.execute("DELETE FROM templates WHERE id = 1")
+        await db.commit()

@@ -9,11 +9,11 @@ class Config:
     log_group_id: int = field(default_factory=lambda: int(getenv("LOG_GROUP_ID", "0")))
     db_path: str = "data/bot.db"
 
-    # дефолтный шаблон гарант-поста
+    # дефолтный шаблон гарант-поста (premium emoji через <tg-emoji>)
     default_template: str = (
-        '🤝 <b>Безопасная сделка Telegram Stars</b>\n'
+        '<tg-emoji emoji-id="5318901904686754959">🙂</tg-emoji> <b>Безопасная сделка Telegram Stars</b>\n'
         'Заказ: <a href="https://t.me/nft/{gift_slug}-{gift_number}"><b>#TG-{order_id}</b></a>\n\n'
-        'Покупатель зарезервировал <b>{stars} звёзд</b> '
+        'Покупатель зарезервировал <b>{stars}<tg-emoji emoji-id="5406812184359507637">⭐</tg-emoji></b> '
         'через гарантийную систему Telegram.\n'
         'Средства находятся на специальном счёте удержания '
         'и будут зачислены на ваш баланс Telegram звёзд '
@@ -24,10 +24,10 @@ class Config:
         '<a href="https://t.me/nft/{gift_slug}-{gift_number}">'
         '{gift_name} #{gift_number}</a>\n'
         '3. Подтвердите передачу подарка\n\n'
-        '⚡ Система Telegram зафиксирует транзакцию '
-        'и моментально зачислит <b>{stars} звёзд</b> '
+        '<tg-emoji emoji-id="5406812184359507637">⭐</tg-emoji> Система Telegram зафиксирует транзакцию '
+        'и моментально зачислит <b>{stars}<tg-emoji emoji-id="5406812184359507637">⭐</tg-emoji></b> '
         'на ваш баланс Telegram звёзд\n\n'
-        '⏳ Резерв действует <b>{timer}</b>'
+        '<tg-emoji emoji-id="5357069174512303778">✅</tg-emoji> Резерв действует <b>{timer}</b>'
     )
 
 

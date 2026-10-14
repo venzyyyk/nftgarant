@@ -15,6 +15,7 @@ from config import config
 from db import (
     is_operator, create_deal, get_deal, get_deal_by_order,
     update_deal_status, set_deal_seller, get_active_deals, get_template,
+    delete_template,
 )
 from utils import generate_order_id, render_template
 from keyboards import deal_seller_kb, operator_deal_kb
@@ -67,6 +68,19 @@ async def cmd_start(msg: Message):
         )
     else:
         await msg.answer("👋 Бот гарант-сделок Telegram Stars.")
+
+
+# --- сброс кастомного шаблона на default из config.py ---
+
+@router.message(F.text == "/resettpl")
+async def cmd_resettpl(msg: Message):
+    if msg.from_user.id != config.owner_id:
+        return
+    await delete_template()
+    await msg.answer(
+        "✅ Кастомный шаблон удалён. Теперь используется default из config.py "
+        "(с premium эмодзи)."
+    )
 
 
 # --- создание сделки ---
