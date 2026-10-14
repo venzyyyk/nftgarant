@@ -276,26 +276,46 @@ async def cb_offer_accept(cb: CallbackQuery):
 
     new_kb = deal_seller_kb(deal_id, deal["gift_slug"], deal["gift_number"])
 
+    bcid = getattr(cb.message, "business_connection_id", None) if cb.message else None
+    log.info(f"cb_offer_accept: deal_id={deal_id}, bcid={bcid}, msg_id={cb.message.message_id if cb.message else None}")
+
     try:
-        if cb.message:
-            # business_connection_id у сообщения
-            bcid = getattr(cb.message, "business_connection_id", None)
+        if bcid:
+            await cb.bot.edit_message_text(
+                business_connection_id=bcid,
+                chat_id=cb.message.chat.id,
+                message_id=cb.message.message_id,
+                text=full_text,
+                parse_mode="HTML",
+                reply_markup=new_kb,
+            )
+        elif cb.message:
+            await cb.message.edit_text(
+                full_text,
+                parse_mode="HTML",
+                reply_markup=new_kb,
+            )
+    except Exception as e:
+        log.error(f"cb_offer_accept edit failed: {e}")
+        # fallback: отправляем новое сообщение
+        try:
             if bcid:
-                await cb.bot.edit_message_text(
+                await cb.bot.send_message(
                     chat_id=cb.message.chat.id,
-                    message_id=cb.message.message_id,
+                    text=full_text,
+                    parse_mode="HTML",
+                    reply_markup=new_kb,
+                    business_connection_id=bcid,
+                )
+            elif cb.message:
+                await cb.bot.send_message(
+                    chat_id=cb.message.chat.id,
                     text=full_text,
                     parse_mode="HTML",
                     reply_markup=new_kb,
                 )
-            else:
-                await cb.message.edit_text(
-                    full_text,
-                    parse_mode="HTML",
-                    reply_markup=new_kb,
-                )
-    except Exception as e:
-        log.error(f"cb_offer_accept edit failed: {e}")
+        except Exception as e2:
+            log.error(f"cb_offer_accept fallback send failed: {e2}")
 
     await cb.answer("Офер принят. Готово к передаче подарка.")
     await update_deal_status(deal_id, "sent")
@@ -320,15 +340,21 @@ async def cb_offer_decline(cb: CallbackQuery):
 
     await update_deal_status(deal_id, "cancelled")
 
+    bcid = getattr(cb.message, "business_connection_id", None) if cb.message else None
+    new_text = (cb.message.html_text if cb.message and cb.message.html_text else
+                (cb.message.text if cb.message else "")) + "\n\n<b>❌ Предложение отклонено</b>"
+
     try:
-        if cb.message:
+        if bcid:
             await cb.bot.edit_message_text(
+                business_connection_id=bcid,
                 chat_id=cb.message.chat.id,
                 message_id=cb.message.message_id,
-                text=(cb.message.html_text or cb.message.text or "") +
-                     "\n\n<b>❌ Предложение отклонено</b>",
+                text=new_text,
                 parse_mode="HTML",
             )
+        elif cb.message:
+            await cb.message.edit_text(new_text, parse_mode="HTML")
     except Exception as e:
         log.error(f"cb_offer_decline edit failed: {e}")
 
