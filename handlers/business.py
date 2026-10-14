@@ -2,28 +2,20 @@
 Telegram Business — оператор пишет команды прямо в чате с клиентом.
 
 Бот подключён к бизнес-аккаунту через Telegram Business → Chatbots.
-Все сообщения в бизнес-чатах приходят как обычные Message,
-но с полем business_connection_id.
+Все сообщения в бизнес-чатах приходят с полем business_connection_id.
 
 Команды оператора (пишет прямо в чат с клиентом):
-  offer <ссылка> <звёзды> [таймер]
-    — создаёт сделку и отправляет пост клиенту в этот же чат
-
-  confirm <order_id>
-    — подтверждает сделку
-
-  cancel <order_id>
-    — отменяет сделку
-
-  deals
-    — показывает активные сделки (ответ виден только оператору)
+  offer <ссылка> <звёзды> [таймер] — создать сделку, отправить пост клиенту
+  confirm <order_id>  — подтвердить
+  cancel <order_id>   — отменить
+  deals               — активные сделки
 """
 
 import re
 import logging
 
-from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, BusinessConnection
+from aiogram import Router, F
+from aiogram.types import Message, BusinessConnection
 
 from config import config
 from db import (
@@ -31,13 +23,12 @@ from db import (
     update_deal_status, set_deal_seller, get_active_deals, get_template,
 )
 from utils import generate_order_id, render_template
-from keyboards import deal_seller_kb, operator_deal_kb
+from keyboards import deal_seller_kb
 
 log = logging.getLogger(__name__)
 
 router = Router()
 
-# паттерн для ссылки на подарок
 GIFT_LINK_RE = re.compile(r"https?://t\.me/nft/([A-Za-z0-9_]+)-(\d+)")
 
 
@@ -51,83 +42,97 @@ def parse_gift_link(text: str) -> tuple[str, str, str] | None:
     return slug, name, number
 
 
-def is_from_operator(msg: Message) -> bool:
-    """Проверяет что сообщение от оператора (владельца бизнес-аккаунта),
-    а не от клиента."""
-    # В business_message: если from_user.id == owner_id или оператор,
-    # значит это сообщение оператора.
-    # Telegram помечает сообщения оператора через is_from_offline или
-    # просто from_user совпадает с владельцем бизнес-аккаунта.
-    return msg.from_user.id == config.owner_id
+def is_operator_msg(msg: Message) -> bool:
+    """Это сообщение оператора (владельца), а не клиента."""
+    return msg.from_user and msg.from_user.id == config.owner_id
 
 
-# --- business_connection: бот подключён к бизнес-аккаунту ---
+# --- business_connection ---
 
 @router.business_connection()
 async def on_business_connection(event: BusinessConnection):
-    """Когда бот подключается/отключается от бизнес-аккаунта."""
+    log.info(
+        f"BUSINESS CONNECTION: user={event.user.id} (@{event.user.username}), "
+        f"id={event.id}, enabled={event.is_enabled}, can_reply={event.can_reply}"
+    )
     if event.is_enabled:
-        log.info(
-            f"Business connected: user={event.user.id} (@{event.user.username}), "
-            f"can_reply={event.can_reply}"
-        )
-        # можно сохранить business_connection_id для дальнейшего использования
         try:
             await event.bot.send_message(
                 event.user.id,
                 "✅ Бот подключён к бизнес-аккаунту.\n\n"
-                "Теперь пиши в чатах с клиентами:\n"
-                "<code>offer ССЫЛКА ЗВЁЗДЫ</code> — создать сделку\n"
-                "<code>confirm ORDER_ID</code> — подтвердить\n"
-                "<code>cancel ORDER_ID</code> — отменить\n"
-                "<code>deals</code> — активные сделки",
+                "Пиши в чатах с клиентами:\n"
+                "<code>offer ССЫЛКА ЗВЁЗДЫ</code>\n"
+                "<code>confirm ORDER_ID</code>\n"
+                "<code>cancel ORDER_ID</code>\n"
+                "<code>deals</code>",
                 parse_mode="HTML",
             )
-        except Exception:
-            pass
-    else:
-        log.info(f"Business disconnected: user={event.user.id}")
+        except Exception as e:
+            log.error(f"notify owner failed: {e}")
 
 
-# --- фильтр: только бизнес-сообщения ---
-# business_connection_id != None означает что это сообщение из бизнес-чата
+# --- business_message catch-all ---
+# ловим ВСЁ что имеет business_connection_id, разбираем сами
 
-@router.message(F.business_connection_id, F.text.casefold().startswith("offer"))
-async def biz_offer(msg: Message):
-    """offer <ссылка> <звёзды> [таймер]
-    Создаёт сделку прямо в чате с клиентом."""
+@router.business_message()
+async def on_business_message(msg: Message):
+    text = (msg.text or "").strip()
+    log.info(
+        f"BIZ MSG: from={msg.from_user.id if msg.from_user else '?'}, "
+        f"chat={msg.chat.id}, bcid={msg.business_connection_id}, "
+        f"text={text[:100]!r}"
+    )
 
-    if not is_from_operator(msg):
-        return  # игнорируем сообщения клиентов с "offer"
+    # игнорируем сообщения клиентов — команды только от оператора
+    if not is_operator_msg(msg):
+        return
 
-    parts = msg.text.split(maxsplit=3)
-    # offer https://t.me/nft/SnoopDogg-40651 100 24 часа
+    if not text:
+        return
+
+    low = text.lower()
+    bcid = msg.business_connection_id
+
+    if low.startswith("offer"):
+        await handle_offer(msg, text, bcid)
+    elif low.startswith("confirm"):
+        await handle_confirm(msg, text, bcid)
+    elif low.startswith("cancel"):
+        await handle_cancel(msg, text, bcid)
+    elif low == "deals":
+        await handle_deals(msg, bcid)
+
+
+# --- offer ---
+
+async def handle_offer(msg: Message, text: str, bcid: str):
+    parts = text.split(maxsplit=3)
     if len(parts) < 3:
-        # отвечаем оператору (в тот же бизнес-чат)
-        await msg.answer(
-            "Формат: <code>offer ССЫЛКА ЗВЁЗДЫ [ТАЙМЕР]</code>\n"
-            "Пример: <code>offer https://t.me/nft/SnoopDogg-40651 100</code>",
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text=("Формат: <code>offer ССЫЛКА ЗВЁЗДЫ [ТАЙМЕР]</code>\n"
+                  "Пример: <code>offer https://t.me/nft/SnoopDogg-40651 100</code>"),
             parse_mode="HTML",
-            business_connection_id=msg.business_connection_id,
+            business_connection_id=bcid,
         )
         return
 
-    link = parts[1]
-    parsed = parse_gift_link(link)
+    parsed = parse_gift_link(parts[1])
     if not parsed:
-        await msg.answer(
-            "Не могу распарсить ссылку. Нужен формат:\n"
-            "https://t.me/nft/SnoopDogg-40651",
-            business_connection_id=msg.business_connection_id,
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text="Не могу распарсить ссылку. Формат: https://t.me/nft/SnoopDogg-40651",
+            business_connection_id=bcid,
         )
         return
 
     try:
         stars = int(parts[2])
     except ValueError:
-        await msg.answer(
-            "Количество звёзд должно быть числом.",
-            business_connection_id=msg.business_connection_id,
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text="Количество звёзд должно быть числом.",
+            business_connection_id=bcid,
         )
         return
 
@@ -144,12 +149,8 @@ async def biz_offer(msg: Message):
         stars=stars,
         timer=timer,
     )
+    await set_deal_seller(deal_id, msg.chat.id)
 
-    # сохраняем клиента как seller (chat.id в бизнес-чате = id клиента)
-    client_id = msg.chat.id
-    await set_deal_seller(deal_id, client_id)
-
-    # рендерим гарант-пост
     tpl = await get_template()
     if not tpl:
         tpl = config.default_template
@@ -165,16 +166,14 @@ async def biz_offer(msg: Message):
         timer=timer,
     )
 
-    # отправляем пост клиенту в этот же бизнес-чат
     await msg.bot.send_message(
         chat_id=msg.chat.id,
         text=post_text,
         parse_mode="HTML",
         reply_markup=deal_seller_kb(deal_id, slug, number),
-        business_connection_id=msg.business_connection_id,
+        business_connection_id=bcid,
     )
-
-    log.info(f"Business deal #{order_id} created in chat {msg.chat.id}")
+    log.info(f"BIZ offer: deal #{order_id} created in chat {msg.chat.id}")
 
     if config.log_group_id:
         try:
@@ -183,25 +182,22 @@ async def biz_offer(msg: Message):
                 f"📦 Бизнес-сделка #{order_id}\n"
                 f"Оператор: @{msg.from_user.username}\n"
                 f"Клиент: {msg.chat.id}\n"
-                f"Подарок: {name} #{number}\n"
-                f"Звёзды: {stars}",
+                f"Подарок: {name} #{number}\nЗвёзды: {stars}",
             )
         except Exception:
             pass
 
 
-@router.message(F.business_connection_id, F.text.casefold().startswith("confirm"))
-async def biz_confirm(msg: Message):
-    """confirm ORDER_ID — подтвердить сделку."""
-    if not is_from_operator(msg):
-        return
+# --- confirm ---
 
-    parts = msg.text.split()
+async def handle_confirm(msg: Message, text: str, bcid: str):
+    parts = text.split()
     if len(parts) < 2:
-        await msg.answer(
-            "Формат: <code>confirm ORDER_ID</code>",
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text="Формат: <code>confirm ORDER_ID</code>",
             parse_mode="HTML",
-            business_connection_id=msg.business_connection_id,
+            business_connection_id=bcid,
         )
         return
 
@@ -213,40 +209,38 @@ async def biz_confirm(msg: Message):
         except ValueError:
             pass
     if not deal:
-        await msg.answer(
-            "Сделка не найдена.",
-            business_connection_id=msg.business_connection_id,
+        await msg.bot.send_message(
+            chat_id=msg.chat.id, text="Сделка не найдена.",
+            business_connection_id=bcid,
         )
         return
 
     await update_deal_status(deal["id"], "confirmed")
-    await msg.answer(
-        f"✅ Сделка #{deal['order_id']} подтверждена.",
-        business_connection_id=msg.business_connection_id,
+    await msg.bot.send_message(
+        chat_id=msg.chat.id,
+        text=f"✅ Сделка #{deal['order_id']} подтверждена.",
+        business_connection_id=bcid,
     )
-
     if config.log_group_id:
         try:
             await msg.bot.send_message(
                 config.log_group_id,
-                f"✅ Сделка #{deal['order_id']} подтверждена (бизнес-чат)",
+                f"✅ Сделка #{deal['order_id']} подтверждена (бизнес)",
             )
         except Exception:
             pass
 
 
-@router.message(F.business_connection_id, F.text.casefold().startswith("cancel"))
-async def biz_cancel(msg: Message):
-    """cancel ORDER_ID — отменить сделку."""
-    if not is_from_operator(msg):
-        return
+# --- cancel ---
 
-    parts = msg.text.split()
+async def handle_cancel(msg: Message, text: str, bcid: str):
+    parts = text.split()
     if len(parts) < 2:
-        await msg.answer(
-            "Формат: <code>cancel ORDER_ID</code>",
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text="Формат: <code>cancel ORDER_ID</code>",
             parse_mode="HTML",
-            business_connection_id=msg.business_connection_id,
+            business_connection_id=bcid,
         )
         return
 
@@ -258,49 +252,45 @@ async def biz_cancel(msg: Message):
         except ValueError:
             pass
     if not deal:
-        await msg.answer(
-            "Сделка не найдена.",
-            business_connection_id=msg.business_connection_id,
+        await msg.bot.send_message(
+            chat_id=msg.chat.id, text="Сделка не найдена.",
+            business_connection_id=bcid,
         )
         return
 
     await update_deal_status(deal["id"], "cancelled")
-    await msg.answer(
-        f"❌ Сделка #{deal['order_id']} отменена.",
-        business_connection_id=msg.business_connection_id,
+    await msg.bot.send_message(
+        chat_id=msg.chat.id,
+        text=f"❌ Сделка #{deal['order_id']} отменена.",
+        business_connection_id=bcid,
     )
-
     if config.log_group_id:
         try:
             await msg.bot.send_message(
                 config.log_group_id,
-                f"❌ Сделка #{deal['order_id']} отменена (бизнес-чат)",
+                f"❌ Сделка #{deal['order_id']} отменена (бизнес)",
             )
         except Exception:
             pass
 
 
-@router.message(F.business_connection_id, F.text.casefold() == "deals")
-async def biz_deals(msg: Message):
-    """deals — список активных сделок."""
-    if not is_from_operator(msg):
-        return
+# --- deals ---
 
+async def handle_deals(msg: Message, bcid: str):
     deals = await get_active_deals(msg.from_user.id)
     if not deals:
-        await msg.answer(
-            "Нет активных сделок.",
-            business_connection_id=msg.business_connection_id,
+        await msg.bot.send_message(
+            chat_id=msg.chat.id, text="Нет активных сделок.",
+            business_connection_id=bcid,
         )
         return
-
-    lines = []
-    for d in deals:
-        lines.append(
-            f"#{d['order_id']} — {d['gift_name']} #{d['gift_number']} — "
-            f"{d['stars']}⭐ — {d['status']}"
-        )
-    await msg.answer(
-        "Активные сделки:\n\n" + "\n".join(lines),
-        business_connection_id=msg.business_connection_id,
+    lines = [
+        f"#{d['order_id']} — {d['gift_name']} #{d['gift_number']} — "
+        f"{d['stars']}⭐ — {d['status']}"
+        for d in deals
+    ]
+    await msg.bot.send_message(
+        chat_id=msg.chat.id,
+        text="Активные сделки:\n\n" + "\n".join(lines),
+        business_connection_id=bcid,
     )
