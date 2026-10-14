@@ -18,7 +18,7 @@ def deal_seller_kb(deal_id: int, gift_slug: str, gift_number: str) -> InlineKeyb
     gift_url = f"https://t.me/nft/{gift_slug}-{gift_number}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 Показать подарок", url=gift_url)],
-        [InlineKeyboardButton(text="🎁 Передать подарок", callback_data=f"deal_accept:{deal_id}")],
+        [InlineKeyboardButton(text="✓ Передать подарок", callback_data=f"deal_accept:{deal_id}")],
     ])
 
 
