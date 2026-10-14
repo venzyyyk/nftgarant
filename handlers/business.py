@@ -166,14 +166,42 @@ async def handle_offer(msg: Message, text: str, bcid: str):
         timer=timer,
     )
 
-    await msg.bot.send_message(
-        chat_id=msg.chat.id,
-        text=post_text,
-        parse_mode="HTML",
-        reply_markup=deal_seller_kb(deal_id, slug, number),
-        business_connection_id=bcid,
-    )
-    log.info(f"BIZ offer: deal #{order_id} created in chat {msg.chat.id}")
+    try:
+        await msg.bot.send_message(
+            chat_id=msg.chat.id,
+            text=post_text,
+            parse_mode="HTML",
+            reply_markup=deal_seller_kb(deal_id, slug, number),
+            business_connection_id=bcid,
+        )
+        log.info(f"BIZ offer: deal #{order_id} created in chat {msg.chat.id}")
+    except Exception as e:
+        log.error(f"BIZ offer send failed: {e}")
+        # fallback — отправляем как обычный бот напрямую клиенту (без бизнес-соединения)
+        try:
+            await msg.bot.send_message(
+                chat_id=msg.chat.id,
+                text=post_text,
+                parse_mode="HTML",
+                reply_markup=deal_seller_kb(deal_id, slug, number),
+            )
+            log.info(f"BIZ offer: deal #{order_id} fallback-sent to {msg.chat.id}")
+        except Exception as e2:
+            log.error(f"BIZ offer fallback failed: {e2}")
+            # сообщаем оператору в тот же чат от его имени (через бизнес)
+            try:
+                await msg.bot.send_message(
+                    chat_id=msg.from_user.id,
+                    text=(f"⚠️ Сделка #{order_id} создана, но пост отправить не смог:\n"
+                          f"<code>{e}</code>\n\n"
+                          f"Причины: клиент в Excluded Chats, заблокировал бота, "
+                          f"или настройки приватности. "
+                          f"Попроси клиента написать /start боту @{(await msg.bot.me()).username}, "
+                          f"потом: <code>/send {order_id} {msg.chat.id}</code>"),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
     if config.log_group_id:
         try:
