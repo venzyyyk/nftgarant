@@ -1,11 +1,23 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def deal_seller_kb(deal_id: int, gift_slug: str, gift_number: str) -> InlineKeyboardMarkup:
-    """Клавиатура для продавца — показать подарок + трансфер + подтвердить"""
+def deal_offer_kb(deal_id: int, gift_slug: str, gift_number: str) -> InlineKeyboardMarkup:
+    """Первый вид — короткий офер: Показать подарок + Отклонить/Принять"""
     gift_url = f"https://t.me/nft/{gift_slug}-{gift_number}"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 Передать подарок", url=gift_url)],
+        [InlineKeyboardButton(text="🎁 Показать подарок", url=gift_url)],
+        [
+            InlineKeyboardButton(text="✖ Отклонить", callback_data=f"deal_decline:{deal_id}"),
+            InlineKeyboardButton(text="✓ Принять", callback_data=f"deal_offer_accept:{deal_id}"),
+        ],
+    ])
+
+
+def deal_seller_kb(deal_id: int, gift_slug: str, gift_number: str) -> InlineKeyboardMarkup:
+    """Второй вид — после Принять: Показать подарок + Подтвердить передачу"""
+    gift_url = f"https://t.me/nft/{gift_slug}-{gift_number}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎁 Показать подарок", url=gift_url)],
         [InlineKeyboardButton(text="✅ Подтвердить передачу", callback_data=f"deal_accept:{deal_id}")],
     ])
 

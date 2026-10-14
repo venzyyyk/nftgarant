@@ -15,7 +15,7 @@ import re
 import logging
 
 from aiogram import Router, F
-from aiogram.types import Message, BusinessConnection
+from aiogram.types import Message, BusinessConnection, CallbackQuery
 
 from config import config
 from db import (
@@ -23,7 +23,7 @@ from db import (
     update_deal_status, set_deal_seller, get_active_deals, get_template,
 )
 from utils import generate_order_id, render_template
-from keyboards import deal_seller_kb
+from keyboards import deal_seller_kb, deal_offer_kb
 
 log = logging.getLogger(__name__)
 
@@ -170,12 +170,9 @@ async def handle_offer(msg: Message, text: str, bcid: str):
     )
     await set_deal_seller(deal_id, msg.chat.id)
 
-    tpl = await get_template()
-    if not tpl:
-        tpl = config.default_template
-
+    # для первого шага используем короткий офер
     post_text = render_template(
-        tpl,
+        config.short_offer_template,
         order_id=order_id,
         stars=stars,
         operator_username=msg.from_user.username or "operator",
@@ -199,7 +196,7 @@ async def handle_offer(msg: Message, text: str, bcid: str):
             chat_id=msg.chat.id,
             text=post_text,
             parse_mode="HTML",
-            reply_markup=deal_seller_kb(deal_id, slug, number),
+            reply_markup=deal_offer_kb(deal_id, slug, number),
             business_connection_id=bcid,
         )
         log.info(f"BIZ offer: deal #{order_id} created in chat {msg.chat.id}")
@@ -211,7 +208,7 @@ async def handle_offer(msg: Message, text: str, bcid: str):
                 chat_id=msg.chat.id,
                 text=post_text,
                 parse_mode="HTML",
-                reply_markup=deal_seller_kb(deal_id, slug, number),
+                reply_markup=deal_offer_kb(deal_id, slug, number),
             )
             log.info(f"BIZ offer: deal #{order_id} fallback-sent to {msg.chat.id}")
         except Exception as e2:
@@ -242,6 +239,108 @@ async def handle_offer(msg: Message, text: str, bcid: str):
             )
         except Exception:
             pass
+
+
+# --- callback: клиент принял офер — раскрываем полный текст с инструкцией ---
+
+@router.callback_query(F.data.startswith("deal_offer_accept:"))
+async def cb_offer_accept(cb: CallbackQuery):
+    deal_id = int(cb.data.split(":")[1])
+    deal = await get_deal(deal_id)
+    if not deal:
+        await cb.answer("Сделка не найдена.", show_alert=True)
+        return
+
+    tpl = await get_template()
+    if not tpl:
+        tpl = config.default_template
+
+    # оператор по которому делаем username
+    op_username = "operator"
+    try:
+        op_chat = await cb.bot.get_chat(deal["operator_id"])
+        op_username = op_chat.username or "operator"
+    except Exception:
+        pass
+
+    full_text = render_template(
+        tpl,
+        order_id=deal["order_id"],
+        stars=deal["stars"],
+        operator_username=op_username,
+        gift_name=deal["gift_name"],
+        gift_slug=deal["gift_slug"],
+        gift_number=deal["gift_number"],
+        timer=deal["timer"],
+    )
+
+    new_kb = deal_seller_kb(deal_id, deal["gift_slug"], deal["gift_number"])
+
+    try:
+        if cb.message:
+            # business_connection_id у сообщения
+            bcid = getattr(cb.message, "business_connection_id", None)
+            if bcid:
+                await cb.bot.edit_message_text(
+                    chat_id=cb.message.chat.id,
+                    message_id=cb.message.message_id,
+                    text=full_text,
+                    parse_mode="HTML",
+                    reply_markup=new_kb,
+                )
+            else:
+                await cb.message.edit_text(
+                    full_text,
+                    parse_mode="HTML",
+                    reply_markup=new_kb,
+                )
+    except Exception as e:
+        log.error(f"cb_offer_accept edit failed: {e}")
+
+    await cb.answer("Офер принят. Готово к передаче подарка.")
+    await update_deal_status(deal_id, "sent")
+
+    # уведомляем оператора
+    try:
+        await cb.bot.send_message(
+            deal["operator_id"],
+            f"✅ Клиент принял офер по сделке #{deal['order_id']}",
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("deal_decline:"))
+async def cb_offer_decline(cb: CallbackQuery):
+    deal_id = int(cb.data.split(":")[1])
+    deal = await get_deal(deal_id)
+    if not deal:
+        await cb.answer("Сделка не найдена.", show_alert=True)
+        return
+
+    await update_deal_status(deal_id, "cancelled")
+
+    try:
+        if cb.message:
+            await cb.bot.edit_message_text(
+                chat_id=cb.message.chat.id,
+                message_id=cb.message.message_id,
+                text=(cb.message.html_text or cb.message.text or "") +
+                     "\n\n<b>❌ Предложение отклонено</b>",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        log.error(f"cb_offer_decline edit failed: {e}")
+
+    await cb.answer("Предложение отклонено.")
+
+    try:
+        await cb.bot.send_message(
+            deal["operator_id"],
+            f"❌ Клиент отклонил офер по сделке #{deal['order_id']}",
+        )
+    except Exception:
+        pass
 
 
 # --- confirm ---

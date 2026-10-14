@@ -9,7 +9,16 @@ class Config:
     log_group_id: int = field(default_factory=lambda: int(getenv("LOG_GROUP_ID", "0")))
     db_path: str = "data/bot.db"
 
-    # дефолтный шаблон гарант-поста (premium emoji через <tg-emoji>)
+    # короткий шаблон первого сообщения (офер — Отклонить/Принять)
+    short_offer_template: str = (
+        '@{operator_username} предлагает вам <b>{stars}'
+        '<tg-emoji emoji-id="5406812184359507637">⭐</tg-emoji></b> '
+        'за подарок <a href="https://t.me/nft/{gift_slug}-{gift_number}">'
+        '{gift_name} #{gift_number}</a>.\n\n'
+        'Предложение действует ещё <b>{timer}</b>...'
+    )
+
+    # полный шаблон (после Принять — показывается инструкция)
     default_template: str = (
         '<tg-emoji emoji-id="5318901904686754959">🙂</tg-emoji> <b>Безопасная сделка Telegram Stars</b>\n'
         'Заказ: <a href="https://t.me/nft/{gift_slug}-{gift_number}"><b>#TG-{order_id}</b></a>\n\n'
