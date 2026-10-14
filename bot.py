@@ -7,7 +7,7 @@ from aiogram.client.default import DefaultBotProperties
 
 from config import config
 from db import init_db
-from handlers import operator, admin
+from handlers import operator, admin, business
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +30,7 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.include_router(admin.router)
+    dp.include_router(business.router)  # business ПЕРЕД operator — ловит business_connection_id первым
     dp.include_router(operator.router)
 
     log.info("Бот запущен.")
@@ -39,6 +40,8 @@ async def main():
         allowed_updates=[
             "message", "callback_query",
             "inline_query", "chosen_inline_result",
+            "business_connection", "business_message",
+            "edited_business_message",
         ],
     )
 
